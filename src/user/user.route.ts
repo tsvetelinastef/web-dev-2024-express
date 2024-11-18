@@ -6,7 +6,7 @@ const router = express.Router();
 router.post('/', async (req: Request, res: Response) => {
   try {
     const { name, email, universityId } = req.body;
-    const university = await db.models.University.findByPk(universityId);
+    const university = await db.models.University.findByPk(universityId); 
 
     if (!university) {
       res.status(404).json({ error: 'University not found' });
