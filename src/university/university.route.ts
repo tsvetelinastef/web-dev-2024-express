@@ -3,6 +3,8 @@ import { db } from '../database';
 
 const router = express.Router();
 
+//subjects model and route
+// post user method
 router.post('/', async (req: Request, res: Response) => {
   try {
     const { name, town } = req.body;
@@ -16,6 +18,7 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
+// subjects to users (many users - many subjects)
 router.get('/', async (_req: Request, res: Response) => {
   try {
     const universities = await db.models.University.findAll({
@@ -29,5 +32,6 @@ router.get('/', async (_req: Request, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 
 export default router;

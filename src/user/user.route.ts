@@ -1,92 +1,97 @@
-import { Router } from 'express';
+import express, { Request, Response } from 'express';
+import { db } from '../database';
+import { Subject } from '../subjects/subject';
 
-const userRouter = Router();
+const router = express.Router();
 
-// Initial users updated to include `subjects` array
-let users = [
-  { id: 1, name: 'John Doe', email: 'john@example.com', universityId: 1, subjects: [] },
-  { id: 2, name: 'Jane Smith', email: 'jane@example.com', universityId: 2, subjects: [] }
-];
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const { name, email, universityId, subjectIds } = req.body;
+    const university = await db.models.University.findByPk(universityId);
 
-// PATCH to update subjects
-userRouter.patch('/update-subjects/:id', (req, res) => {
-  const userId = parseInt(req.params.id);
-  const user = users.find((u) => u.id === userId);
+    if (!university) {
+      res.status(404).json({ error: 'University not found' });
+      return;
+    }
 
-  if (user) {
-    user.subjects = req.body.subjects; // Replace or update the subjects array
-    res.json(user);
-  } else {
-    res.status(404).json({ message: 'User not found' });
+    const subjects = []
+    for(let id of subjectIds){
+      const subject = await db.models.Subject.findByPk(id);
+
+      if (!subject) {
+        res.status(404).json({ error: 'Subject not found' });
+        return;
+      }
+
+      subjects.push(subject);
+    }
+
+    if (await db.models.User.findOne({ where: { email } })) {
+      throw new Error("User already exists.")
+    }
+    
+    const user = await db.models.User.create({ name, email, universityId });
+    user.addSubjects(subjects);
+
+    res.status(201).json(user);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
   }
 });
 
-userRouter.get('/', (req, res) => {
-  res.json(users);
-});
+router.get('/', async (_req: Request, res: Response) => {
+  try {
+    const users = await db.models.User.findAll({
+      include: [
+        {
+          model: db.models.University,
+          as: 'university',
+        },
+        {
+          model: db.models.Subject,
+          through: { attributes: [] }
+        }
+      ],
+    });
 
-userRouter.get('/:id', (req, res) => {
-  const userId = parseInt(req.params.id);
-  const user = users.find((u) => u.id === userId);
-  if (user) {
-    res.json(user);
-  } else {
-    res.status(404).json({ message: 'User not found' });
+    res.status(200).json(users);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
-userRouter.post('/', (req, res) => {
-  const newUser = {
-    id: users.length + 1,
-    name: req.body.name,
-    email: req.body.email,
-    universityId: req.body.universityId || null, // Add universityId, default to null if not provided
-    subjects: req.body.subjects || [] // Add subjects, default to empty array if not provided
-  };
-  users.push(newUser);
-  res.status(201).json(newUser);
-});
+router.put('/', async (req: Request, res: Response) => {
+  try {
+    const { id, subjectIds } = req.body;
+    const user = await db.models.User.findByPk( +id );
 
-// PUT to update an existing user
-userRouter.put('/:id', (req, res) => {
-  const userId = parseInt(req.params.id);
-  const userIndex = users.findIndex((u) => u.id === userId);
-  if (userIndex !== -1) {
-    users[userIndex] = {
-      id: userId,
-      name: req.body.name,
-      email: req.body.email,
-      universityId: req.body.universityId || users[userIndex].universityId, // Retain existing universityId if not provided
-      subjects: req.body.subjects || users[userIndex].subjects // Retain existing subjects if not provided
-    };
-    res.json(users[userIndex]);
-  } else {
-    res.status(404).json({ message: 'User not found' });
+    if (user == null) {
+      throw new Error("No user.");
+    }
+
+    if (subjectIds && Array.isArray(subjectIds)) {
+      const subjects = await db.models.Subject.findAll({
+        where: { id: subjectIds },
+      });
+
+      if (subjects.length !== subjectIds.length) {
+        throw new Error("Some subjects were not found!");
+      }
+  
+      await user.setSubjects(subjects);
+    }
+    else{
+      await user.setSubjects([]);
+    }
+
+    const updatedUser = await user.reload({
+      include: [{ model: db.models.Subject }],
+    });
+  
+    res.status(200).json(user);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
   }
 });
 
-// DELETE a user by ID
-userRouter.delete('/:id', (req, res) => {
-  const userId = parseInt(req.params.id);
-  const userIndex = users.findIndex((u) => u.id === userId);
-  if (userIndex !== -1) {
-    const deletedUser = users.splice(userIndex, 1);
-    res.json(deletedUser[0]);
-  } else {
-    res.status(404).json({ message: 'User not found' });
-  }
-});
-
-userRouter.patch('/update-university/:id', (req, res) => {
-  const userId = parseInt(req.params.id);
-  const user = users.find((u) => u.id === userId);
-
-  if (user) {
-    user.universityId = req.body.universityId;
-    res.json(user);
-  } else {
-    res.status(404).json({ message: 'User not found' });
-  }
-});
-
-export default userRouter;
+export default router;
